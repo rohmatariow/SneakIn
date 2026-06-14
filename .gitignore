@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Gradle
+.gradle/
+build/
+
+# IntelliJ / IDE
+.idea/
+*.iml
+
+# Claude
+.claude/
