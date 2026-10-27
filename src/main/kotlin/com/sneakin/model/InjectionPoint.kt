@@ -28,6 +28,23 @@ enum class LocationType {
 /** Inferred shape of a baseline value — drives payload applicability (Section 6.4). */
 enum class ValueType { NUMERIC, DATE, EMAIL, UUID, BOOLEAN, EMPTY, STRING }
 
+/**
+ * Charset the engine uses when rotating a [InjectionPoint.unique] value per request. Lets the user
+ * override the shape-inference so a unique value never injects unexpected characters:
+ *  - [NUMERIC]       digits only (`0-9`)
+ *  - [ALPHANUMERIC]  letters + digits (`a-z A-Z 0-9`), no symbols
+ *  - [MIXED]         keep the original shape (may carry `-`, `@`, `.`) — the legacy behaviour
+ */
+enum class UniqueFormat(val label: String) {
+    NUMERIC("numeric"),
+    ALPHANUMERIC("alphanumeric"),
+    MIXED("mixed");
+
+    companion object {
+        fun fromLabel(label: String): UniqueFormat? = entries.firstOrNull { it.label == label }
+    }
+}
+
 /** One step in a JSON leaf path: an object key or an array index. */
 sealed interface JsonToken {
     data class Key(val key: String) : JsonToken
@@ -84,6 +101,14 @@ class InjectionPoint(
      * server-side uniqueness check never rejects the repeats and masks the real validation result.
      */
     var unique: Boolean = false
+
+    /**
+     * Charset for the rotated unique value. Defaults to [UniqueFormat.NUMERIC] for numeric fields
+     * (so the rotated value stays pure digits) and [UniqueFormat.MIXED] otherwise (legacy shape).
+     * Only meaningful while [unique] is set; the user can override it per target.
+     */
+    var uniqueFormat: UniqueFormat =
+        if (valueType == ValueType.NUMERIC) UniqueFormat.NUMERIC else UniqueFormat.MIXED
 
     override fun toString(): String = "${locationType.label}:$name"
 }

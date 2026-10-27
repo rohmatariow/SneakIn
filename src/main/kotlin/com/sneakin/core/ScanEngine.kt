@@ -210,7 +210,7 @@ class ScanEngine(
         if (uniquePoints.isEmpty()) return base
         val mutations = uniquePoints
             .filter { it !== exclude }
-            .map { it to UniqueValue.next(it.originalValue, it.valueType, uniqueSeq.incrementAndGet()) }
+            .map { it to UniqueValue.next(it.originalValue, it.valueType, it.uniqueFormat, uniqueSeq.incrementAndGet()) }
         return mutator.mutateAll(base, mutations)
     }
 

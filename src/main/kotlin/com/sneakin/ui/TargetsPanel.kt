@@ -1,11 +1,14 @@
 package com.sneakin.ui
 
 import com.sneakin.model.InjectionPoint
+import com.sneakin.model.UniqueFormat
 import java.awt.BorderLayout
 import java.awt.FlowLayout
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import javax.swing.DefaultCellEditor
 import javax.swing.JButton
+import javax.swing.JComboBox
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JScrollPane
@@ -36,8 +39,14 @@ class TargetsPanel : JPanel(BorderLayout()) {
         // Checkbox columns are driven by clicks; sorting them would just shuffle rows confusingly.
         sorter.setSortable(COL_TEST, false)
         sorter.setSortable(COL_UNIQUE, false)
+        sorter.setSortable(COL_UNIQUE_FORMAT, false)
         table.columnModel.getColumn(COL_TEST).maxWidth = 45
         table.columnModel.getColumn(COL_UNIQUE).maxWidth = 60
+        // Per-row dropdown picking the charset of the rotated unique value (numeric/alphanumeric/mixed).
+        val formatCombo = JComboBox(UniqueFormat.entries.map { it.label }.toTypedArray())
+        table.columnModel.getColumn(COL_UNIQUE_FORMAT).cellEditor = DefaultCellEditor(formatCombo)
+        table.columnModel.getColumn(COL_UNIQUE_FORMAT).preferredWidth = 110
+        table.columnModel.getColumn(COL_UNIQUE_FORMAT).maxWidth = 130
         table.columnModel.getColumn(COL_LOCATION).preferredWidth = 120
         table.columnModel.getColumn(COL_NAME).preferredWidth = 190
         table.columnModel.getColumn(COL_VALUE).preferredWidth = 240
@@ -68,7 +77,7 @@ class TargetsPanel : JPanel(BorderLayout()) {
         selectNone.addActionListener { setVisibleTest(false) }
         top.add(selectAll)
         top.add(selectNone)
-        top.add(JLabel("Shift+click Test to range-select · Unique = rotate value each request"))
+        top.add(JLabel("Shift+click Test to range-select · Unique = rotate value each request · format = charset"))
         top.add(summary)
 
         model.addTableModelListener { refreshSummary() }
@@ -143,10 +152,11 @@ class TargetsPanel : JPanel(BorderLayout()) {
     companion object {
         const val COL_TEST = 0
         const val COL_UNIQUE = 1
-        const val COL_LOCATION = 2
-        const val COL_NAME = 3
-        const val COL_VALUE = 4
-        const val COL_TYPE = 5
+        const val COL_UNIQUE_FORMAT = 2
+        const val COL_LOCATION = 3
+        const val COL_NAME = 4
+        const val COL_VALUE = 5
+        const val COL_TYPE = 6
     }
 }
 
@@ -154,7 +164,8 @@ private class TargetsTableModel : AbstractTableModel() {
     var points: List<InjectionPoint> = emptyList()
         private set
 
-    private val columns = arrayOf("Test", "Unique", "Location", "Name / Path", "Original value", "Type")
+    private val columns =
+        arrayOf("Test", "Unique", "Unique format", "Location", "Name / Path", "Original value", "Type")
 
     fun setPoints(points: List<InjectionPoint>) {
         this.points = points
@@ -181,14 +192,20 @@ private class TargetsTableModel : AbstractTableModel() {
     }
 
     // Test (col 0) is driven by the mouse listener (Shift+click range), so it is NOT cell-editable.
-    // Unique (col 1) is a normal editable checkbox.
-    override fun isCellEditable(rowIndex: Int, columnIndex: Int): Boolean = columnIndex == TargetsPanel.COL_UNIQUE
+    // Unique (col 1) is a normal editable checkbox. Unique format (col 2) is a dropdown, editable
+    // only while that row's Unique is checked (otherwise the charset has no effect).
+    override fun isCellEditable(rowIndex: Int, columnIndex: Int): Boolean = when (columnIndex) {
+        TargetsPanel.COL_UNIQUE -> true
+        TargetsPanel.COL_UNIQUE_FORMAT -> points[rowIndex].unique
+        else -> false
+    }
 
     override fun getValueAt(rowIndex: Int, columnIndex: Int): Any {
         val p = points[rowIndex]
         return when (columnIndex) {
             TargetsPanel.COL_TEST -> p.selected
             TargetsPanel.COL_UNIQUE -> p.unique
+            TargetsPanel.COL_UNIQUE_FORMAT -> if (p.unique) p.uniqueFormat.label else "—"
             TargetsPanel.COL_LOCATION -> p.locationType.label
             TargetsPanel.COL_NAME -> p.name
             TargetsPanel.COL_VALUE -> truncate(p.originalValue)
@@ -198,9 +215,17 @@ private class TargetsTableModel : AbstractTableModel() {
     }
 
     override fun setValueAt(value: Any?, rowIndex: Int, columnIndex: Int) {
-        if (columnIndex == TargetsPanel.COL_UNIQUE) {
-            points[rowIndex].unique = value as? Boolean ?: false
-            fireTableRowsUpdated(rowIndex, rowIndex)
+        when (columnIndex) {
+            TargetsPanel.COL_UNIQUE -> {
+                points[rowIndex].unique = value as? Boolean ?: false
+                // Repaint the format cell so it switches between the dropdown value and "—".
+                fireTableRowsUpdated(rowIndex, rowIndex)
+            }
+            TargetsPanel.COL_UNIQUE_FORMAT -> {
+                val fmt = UniqueFormat.fromLabel(value as? String ?: "") ?: return
+                points[rowIndex].uniqueFormat = fmt
+                fireTableRowsUpdated(rowIndex, rowIndex)
+            }
         }
     }
 
