@@ -105,6 +105,37 @@ class ClassifierTest {
     }
 
     @Test
+    fun similarNotIdenticalWithNoMarkerIsReviewNotVulnerable() {
+        // Same JSON shape, one non-noise value changed -> structural SIMILAR (not SAME). With no
+        // positive/negative marker configured this is ambiguous, so it must be REVIEW, not VULNERABLE.
+        val base = jsonFp(200, """{"ok":true,"value":100}""")
+        val classifier = Classifier(baselineOf(base, base, base), newConfig())
+        val result = classifier.classify(jsonFp(200, """{"ok":true,"value":999}"""), negative)
+        assertEquals(Verdict.REVIEW, result.verdict)
+    }
+
+    @Test
+    fun similarWithPositiveMarkerPresentIsVulnerable() {
+        // Same SIMILAR match, but now a success marker is configured AND present -> strong enough.
+        val base = jsonFp(200, """{"ok":true,"value":100}""")
+        val config = newConfig().apply { positiveMatch = "\"ok\":true" }
+        val classifier = Classifier(baselineOf(base, base, base), config)
+        val result = classifier.classify(jsonFp(200, """{"ok":true,"value":999}"""), negative)
+        assertEquals(Verdict.VULNERABLE, result.verdict)
+    }
+
+    @Test
+    fun similarWithNegativeMarkerConfiguredButAbsentStaysVulnerable() {
+        // A configured negative marker that does NOT fire still counts as "a marker to lean on",
+        // so the legacy SIMILAR-accept behaviour is preserved when the user opted into markers.
+        val base = jsonFp(200, """{"ok":true,"value":100}""")
+        val config = newConfig().apply { negativeMatch = "invalid" }
+        val classifier = Classifier(baselineOf(base, base, base), config)
+        val result = classifier.classify(jsonFp(200, """{"ok":true,"value":999}"""), negative)
+        assertEquals(Verdict.VULNERABLE, result.verdict)
+    }
+
+    @Test
     fun reflectionRecordedAsSignalButDoesNotSetVerdict() {
         val base = textFp(200, "result ok here")
         val classifier = Classifier(baselineOf(base, base, base), newConfig())
