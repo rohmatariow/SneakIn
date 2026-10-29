@@ -71,7 +71,16 @@ class Classifier(private val baseline: BaselineResult, private val config: ScanC
         val structuralOk = compare in acceptedResults()
         val positiveOk = !positiveConfigured || positivePresent
         val negativeOk = !negativeConfigured || !negativePresent
-        if (statusSuccess && positiveOk && negativeOk && structuralOk) {
+
+        // VULNERABLE requires STRONG evidence of acceptance, not merely "not rejected". An identical
+        // (SAME) response is strong on its own; a merely-SIMILAR body is ambiguous — it is what a
+        // soft-200 reject or a dynamic-content endpoint also looks like — so we only trust SIMILAR
+        // when the user gave the oracle a positive/negative marker to lean on. Without a marker, a
+        // SIMILAR-only match drops to REVIEW instead of being called VULNERABLE (cuts false positives).
+        val anyMarkerConfigured = positiveConfigured || negativeConfigured
+        val strongAccept = compare == CompareResult.SAME || anyMarkerConfigured
+
+        if (statusSuccess && positiveOk && negativeOk && structuralOk && strongAccept) {
             reasons.add(
                 "Accepted: status ${mutated.statusCode} in success set; response " +
                     "${compare.name.lowercase()} to baseline."
@@ -82,11 +91,18 @@ class Classifier(private val baseline: BaselineResult, private val config: ScanC
             )
         }
 
-        // Step 4: diverged but ambiguous
-        reasons.add(
-            "Diverged from baseline (compare=${compare.name.lowercase()}, status ${mutated.statusCode}) — " +
-                "neither a clean accept nor a clean reject."
-        )
+        // Step 4: diverged, or an unconfirmable near-match -> REVIEW
+        if (statusSuccess && structuralOk && !strongAccept) {
+            reasons.add(
+                "Possibly accepted (status ${mutated.statusCode}, ${compare.name.lowercase()} to baseline) " +
+                    "but no marker to confirm accept vs reject — set a positive/negative match to decide."
+            )
+        } else {
+            reasons.add(
+                "Diverged from baseline (compare=${compare.name.lowercase()}, status ${mutated.statusCode}) — " +
+                    "neither a clean accept nor a clean reject."
+            )
+        }
         return Classification(Verdict.REVIEW, "", score, compare, reasons, signals)
     }
 
